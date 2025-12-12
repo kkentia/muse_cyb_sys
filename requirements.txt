@@ -1,0 +1,6 @@
+streamlit
+matplotlib
+numpy
+altair
+pandas
+brainflow

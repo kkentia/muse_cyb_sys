@@ -42,7 +42,7 @@ class Processor:
 
 
         #take log values of PSDs to compress the range & normalize variance
-        posterior_bands = DataFilter.get_avg_band_powers(eeg_data, self.posterior_channel_indices, self.sampling_rate, apply_log=True)
+        posterior_bands = DataFilter.get_avg_band_powers(eeg_data, self.posterior_channel_indices, self.sampling_rate, True)
         posterior_alpha_log = posterior_bands[0][2]
 
         frontal_bands = DataFilter.get_avg_band_powers(eeg_data, self.frontal_channel_indices, self.sampling_rate, True)
@@ -75,4 +75,3 @@ class Processor:
             
             print(f"CALIBRATION COMPLETE")
             print(f"New Viability Band: [{self.viability_band[0]:.3f}, {self.viability_band[1]:.3f}]\n")
-            

@@ -1,138 +1,105 @@
 import streamlit as st
-import pandas as pd
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
+import matplotlib.patches as patches
 import numpy as np
+import altair as alt
+import pandas as pd
 
 
-def create_viability_plot(arousal_value, viability_band):
-    
-    if not viability_band:
-        return plt.figure(figsize=(4, 4)) 
 
-    fig, ax = plt.subplots(figsize=(4, 4))
-
-    center_arousal = np.mean(viability_band)
-    band_radius = (viability_band[1] - viability_band[0]) / 2.0
-    
-    if band_radius <= 0:
-        band_radius = 0.01 
-    
-    distance_from_center = arousal_value - center_arousal
-    angle = np.random.rand() * 2 * np.pi
-    dot_x = distance_from_center * np.cos(angle)
-    dot_y = distance_from_center * np.sin(angle)
-
-    
-    circle = plt.Circle((0, 0), band_radius, color='lightblue', alpha=0.8, label='Viability Band')
-    ax.add_artist(circle)
-    dot_color = 'green' if viability_band[0] <= arousal_value <= viability_band[1] else 'red'
-    ax.plot(dot_x, dot_y, 'o', color=dot_color, markersize=15, label='Current Arousal')
-
-    
-    plot_limit = max(band_radius * 1.5, abs(distance_from_center) * 1.1, 0.1)
-    ax.set_xlim(-plot_limit, plot_limit)
-    ax.set_ylim(-plot_limit, plot_limit)
-    ax.set_aspect('equal', adjustable='box')
+def create_viability_plot(arousal_value, viability_band, noise_level):
+    fig, ax = plt.subplots(figsize=(8, 2))
+    bar_min, bar_max = 0.0, 1.0
+    bar_range = bar_max - bar_min
+    ax.add_patch(patches.Rectangle((bar_min, 0), bar_range, 1, facecolor='gray'))
+    if viability_band and len(viability_band) == 2:
+        band_start = viability_band[0]
+        band_width = viability_band[1] - viability_band[0]
+        ax.add_patch(patches.Rectangle((band_start, 0), band_width, 1, facecolor='deepskyblue'))
+    ax.axvline(x=arousal_value, color='red', linewidth=3)
+    ax.set_xlim(bar_min, bar_max)
+    ax.set_ylim(0, 1)
     ax.axis('off')
-
     return fig
 
+
 #sidebar controls and butons for start/stop
-def render_sim():
+def render_sim(on_caffeine_click, on_drowsy_click, on_exam_click):
     st.sidebar.title("Simulation Controls")
 
-    
     st.session_state.setdefault("state_name", "Calm")
     st.session_state.setdefault("target_arousal", 0.75)
     st.session_state.setdefault("natural_flux", 0.10)
     st.session_state.setdefault("latency", 5)
     st.session_state.setdefault("sensor_sampling_rate", 20)
-    st.session_state.setdefault("gain", 0.10)
-    st.session_state.setdefault("noise_level", 0.01)
-    st.session_state.setdefault("feedback_on", True)
+    st.session_state.setdefault("noise_level", 0.005)
+    st.session_state.setdefault("feedback_on", False)
+    st.session_state.setdefault("environmental_threat", 0.0)
+    st.session_state.setdefault("effort_amplification", 4.0)
+    st.session_state.setdefault("kp", 0.10); st.session_state.setdefault("ki", 0.00); st.session_state.setdefault("kd", 0.00)
+    st.session_state.setdefault("controller_type", "P Controller")
 
-    
-    state_name = st.sidebar.selectbox(
-        "Base State",
-        ('Calm', 'Focused', 'Stressed'),
-        key="state_name"
-    )
-    target_arousal = st.sidebar.slider(
-        "Target Arousal",
-        0.0, 1.0,
-        key="target_arousal"
-    )
-    
-    natural_flux = st.sidebar.slider(
-        "Viability Band Width",
-        0.01, 0.5,
-        value=st.session_state["natural_flux"],
-        step=0.01,
-        key="natural_flux"
-    )
+    state_name = st.sidebar.selectbox("Base State", ('Calm', 'Focused', 'Stressed'), key="state_name")
+    target_arousal = st.sidebar.slider("Target Arousal", 0.0, 1.0, key="target_arousal")
+    natural_flux = st.sidebar.slider("Viability Band Width", 0.01, 0.5, key="natural_flux")
     st.sidebar.divider()
     
+    st.sidebar.subheader("Controller Settings")
+    controller_type = st.sidebar.radio(
+        "Select Controller Type",
+        ("P Controller", "PID Controller"),
+        key="controller_type"
+    )
+
+    if controller_type == "P Controller":
+        kp = st.sidebar.slider("Proportional Gain (Kp)", 0.0, 1.0, key="kp")
+        ki = 0.0
+        kd = 0.0
+        st.sidebar.button("Auto-Tune PID Gains", use_container_width=True, disabled=True)
+        auto_tune_button = False
+    else: # PID Controller
+        kp = st.sidebar.slider("Proportional Gain (Kp)", 0.0, 1.0, key="kp")
+        ki = st.sidebar.slider("Integral Gain (Ki)", 0.0, 0.1, format="%.4f", key="ki")
+        kd = st.sidebar.slider("Derivative Gain (Kd)", 0.0, 1.0, key="kd")
+        auto_tune_button = st.sidebar.button("Auto-Tune PID Gains", use_container_width=True)
+
+    st.sidebar.divider()
     st.sidebar.subheader("System Parameters")
-    latency = st.sidebar.slider(
-        "Latency ", 0, 40,
-        value=st.session_state["latency"],
-        step=1,
-        key="latency"
-    )
-    sensor_sampling_rate = st.sidebar.slider(
-        "Sensor_sampling_Rate (Hz)", 5, 50,
-        value=st.session_state["sensor_sampling_rate"],
-        step=1,
-        key="sensor_sampling_rate"
-    )
-    gain = st.sidebar.slider(
-        "Gain", 0.0, 1.0,
-        value=st.session_state["gain"],
-        step=0.01,
-        key="gain"
-    )
-    noise_level = st.sidebar.slider(
-        "noise_level", 0.0, 0.1,
-        value=st.session_state["noise_level"],
-        step=0.01,
-        format="%.3f",
-        key="noise_level"
-    )
-    feedback_on = st.sidebar.checkbox(
-        "FeedBack", value=st.session_state["feedback_on"], key="feedback_on"
-    )
-
+    latency = st.sidebar.slider("Latency ", 0, 40, key="latency")
+    sensor_sampling_rate = st.sidebar.slider("Sensor_sampling_Rate (Hz)", 5, 50, key="sensor_sampling_rate")
+    effort_amplification = st.sidebar.slider("Effort Amplification", 1.0, 10.0, key="effort_amplification")
+    noise_level = st.sidebar.slider("noise_level", 0.0, 0.1, format="%.3f", key="noise_level")
+    feedback_on = st.sidebar.checkbox("FeedBack", key="feedback_on")
     st.sidebar.divider()
-
-    
+    st.sidebar.subheader("Environmental Factors")
+    environmental_threat = st.sidebar.slider("Environmental Distraction / Threat", 0.0, 1.0, key="environmental_threat")
+    st.sidebar.divider()
     st.sidebar.subheader("Manual Configs")
     spike_up = st.sidebar.button("Spike Up (Arousal ++)", key="spike_up")
     spike_down = st.sidebar.button("Spike Down (Arousal --)", key="spike_down")
-
     st.sidebar.divider()
-
-    
     col1, col2 = st.columns([1, 1])
-    with col1:
-        start_button = st.button("Start Simulation", key="start_button")
-    with col2:
-        stop_button = st.button("Stop Simulation", key="stop_button")
+    with col1: start_button = st.button("Start Simulation", key="start_button", use_container_width=True)
+    with col2: stop_button = st.button("Stop Simulation", key="stop_button", use_container_width=True)
+    st.sidebar.subheader("Run Extreme Trials")
+    scenario_caffeine = st.sidebar.button("Caffeine shot", on_click=on_caffeine_click)
+    scenario_drowsy = st.sidebar.button("Alcohol", on_click=on_drowsy_click)
+    scenario_exam = st.sidebar.button("Stressful Exam", on_click=on_exam_click)
 
     return {
-        "state_name": state_name,
-        "target_arousal": target_arousal,
-        "natural_flux": natural_flux,
-        "latency": latency,
+        "state_name": state_name, "target_arousal": target_arousal,
+        "natural_flux": natural_flux, "latency": latency,
         "sensor_sampling_rate": sensor_sampling_rate,
-        "gain": gain,
-        "noise_level": noise_level,
-        "feedback_on": feedback_on,
-        "spike_up": spike_up,
-        "spike_down": spike_down,
-        "start_button": start_button,
-        "stop_button": stop_button
+        "noise_level": noise_level, "feedback_on": feedback_on,
+        "spike_up": spike_up, "spike_down": spike_down,
+        "start_button": start_button, "stop_button": stop_button,
+        "environmental_threat": environmental_threat,
+        "effort_amplification": effort_amplification,
+        "kp": kp, "ki": ki, "kd": kd,
+        "auto_tune_button": auto_tune_button,
+        "controller_type": controller_type,
     }
 
 
@@ -144,66 +111,114 @@ def render_sim_dashboard():
         col1, col2 = st.columns(2)
         with col1:
             plot_placeholder = st.empty()
+            fatigue_bar_label = st.empty()
+            fatigue_bar = st.empty()
+            energy_bar_label = st.empty()
+            energy_bar = st.empty()
         with col2:
             arousal_metric = st.metric(label="Arousal Index", value="0.00")
             viability_metric = st.metric(label="Viability Band", value="[0.00, 0.00]")
             status_container = st.empty()
+            st.divider()
+            st.subheader("Active PID Gains")
+            st.write("Kp (Proportional)"); kp_bar = st.progress(0.0)
+            st.write("Ki (Integral)"); ki_bar = st.progress(0.0)
+            st.write("Kd (Derivative)"); kd_bar = st.progress(0.0)
+            with st.expander("Show Reference Intervals"):
+                calm_interval_metric = st.metric(label="Calm", value="[0.00, 0.00]")
+                focused_interval_metric = st.metric(label="Focused", value="[0.00, 0.00]")
+                stressed_interval_metric = st.metric(label="Stressed", value="[0.00, 0.00]")
         history_chart = st.empty()
 
     return {
-        "live_area": live_area,
-        "plot_placeholder": plot_placeholder,
-        "arousal_metric": arousal_metric,
-        "viability_metric": viability_metric,
-        "status_container": status_container,
-        "history_chart": history_chart
+        "live_area": live_area, "plot_placeholder": plot_placeholder,
+        "arousal_metric": arousal_metric, "viability_metric": viability_metric,
+        "status_container": status_container, "history_chart": history_chart,
+        "fatigue_bar_label": fatigue_bar_label, "fatigue_bar": fatigue_bar,
+        "energy_bar_label": energy_bar_label, "energy_bar": energy_bar,
+        "calm_interval_metric": calm_interval_metric,
+        "focused_interval_metric": focused_interval_metric,
+        "stressed_interval_metric": stressed_interval_metric,
+        "kp_bar": kp_bar, "ki_bar": ki_bar, "kd_bar": kd_bar,
     }
 
+
 #plot + updater
-def update_dashboard(placeholders, arousal, viability_band, history):
+def update_dashboard(placeholders, arousal, viability_band, history, noise_level, fatigue, is_burnt_out, state_intervals, energy, pid_gains):
     placeholders["arousal_metric"].metric("Arousal Index", f"{arousal:.2f}")
     placeholders["viability_metric"].metric("Viability Band", f"[{viability_band[0]:.2f}, {viability_band[1]:.2f}]")
-    in_range = viability_band[0] <= arousal <= viability_band[1]
     with placeholders["status_container"]:
-        st.success("In Range") if in_range else st.error("Out of Range")
+        if is_burnt_out: st.error("STATUS: BURNOUT")
+        else:
+            in_range = viability_band[0] <= arousal <= viability_band[1]
+            if in_range: st.success("STATUS: IN RANGE")
+            else: st.warning("STATUS: OUT OF RANGE")
 
-    fig = create_viability_plot(arousal, viability_band)
+    fig = create_viability_plot(arousal, viability_band, noise_level)
     placeholders['plot_placeholder'].pyplot(fig)
     plt.close(fig)
 
+    placeholders["fatigue_bar_label"].text(f"Fatigue Level: {fatigue:.0%}")
+    placeholders["fatigue_bar"].progress(fatigue)
+    placeholders["energy_bar_label"].text(f"Energy Level: {energy:.0%}")
+    placeholders["energy_bar"].progress(energy)
+
+    kp, ki, kd = pid_gains
+    placeholders["kp_bar"].progress(np.clip(kp, 0.0, 1.0))
+    placeholders["ki_bar"].progress(np.clip(ki * 10, 0.0, 1.0))
+    placeholders["kd_bar"].progress(np.clip(kd, 0.0, 1.0))
+
+    if state_intervals:
+        placeholders["calm_interval_metric"].metric("Calm", f"[{state_intervals['Calm'][0]:.2f}, {state_intervals['Calm'][1]:.2f}]")
+        placeholders["focused_interval_metric"].metric("Focused", f"[{state_intervals['Focused'][0]:.2f}, {state_intervals['Focused'][1]:.2f}]")
+        placeholders["stressed_interval_metric"].metric("Stressed", f"[{state_intervals['Stressed'][0]:.2f}, {state_intervals['Stressed'][1]:.2f}]")
     
     chart_data = history.rename(columns={"arousal": "Arousal", "lower_band": "Lower Band", "upper_band": "Upper Band"})
     placeholders["history_chart"].line_chart(chart_data[['Arousal', 'Lower Band', 'Upper Band']])
 
 
 
+#GRAPHS
 def render_sim_analysis(data, target_arousal):
     st.subheader("Post-Simulation Analysis")
-
     
+    # calc errors
     data['Position_Error'] = data['arousal'] - target_arousal
     data['Velocity'] = data['arousal'].diff().fillna(0)
     data['Velocity_Error'] = data['Velocity']
-
+    cost = np.sum(data['Position_Error']**2)
     
-    cost = np.sum(data['Position_Error']**2) 
-
-    col1, col2 = st.columns(2)
-    with col1:
-        st.metric("Total Cost (Sum of Squared Error)", f"{cost:.2f}")
-
+    # dl CSV btn
+    csv_data = data.to_csv(index=True)
+    st.download_button(
+        label="Download CSV",
+        data=csv_data,
+        file_name=f"simulation_data_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.csv",
+        mime="text/csv",
+        use_container_width=True,
+    )
     
+    st.divider()
+    
+    st.metric("Total Cost (Sum of Squared Error)", f"{cost:.2f}")
     st.write("**Position Error (Arousal - Target)**")
     st.line_chart(data['Position_Error'])
-
     st.write("**Velocity Error (Rate of Change of Arousal)**")
     st.line_chart(data['Velocity_Error'])
-
     st.write("**Position Error Distribution**")
     fig, ax = plt.subplots()
     ax.hist(data['Position_Error'], bins=30, alpha=0.7, label='Error Distribution')
     ax.axvline(0, color='red', linestyle='--', label='Target')
-    ax.set_xlabel("Error")
-    ax.set_ylabel("Frequency")
-    ax.legend()
+    ax.set_xlabel("Error"); ax.set_ylabel("Frequency"); ax.legend()
     st.pyplot(fig)
+    st.divider()
+    st.write("### Phase Portrait (System Stability)")
+    st.write("This plot shows the system's trajectory. A stable system will spiral into the center (0,0).")
+    phase_data = data[['Position_Error', 'Velocity_Error']].copy()
+    phase_data['Index'] = range(len(phase_data))
+    chart = alt.Chart(phase_data).mark_point(opacity=0.5, size=10).encode(
+        x=alt.X('Position_Error:Q', title='Position Error'),
+        y=alt.Y('Velocity_Error:Q', title='Velocity Error'),
+        tooltip=['Index:Q', 'Position_Error:Q', 'Velocity_Error:Q']
+    ).interactive()
+    st.altair_chart(chart, use_container_width=True)
