@@ -349,7 +349,7 @@ def main():
 
     if mode == "Live EEG":
         if 'plot_process' not in st.session_state:
-            st.info("Starting live plot window")
+            st.info("Starting live plot window...")
             board_id = BoardIds.MUSE_2_BOARD.value
             
             plot_queue = mp.Queue()
@@ -357,12 +357,14 @@ def main():
             
             plot_process = mp.Process(
                 target=run_plot, 
-                args=(plot_queue, BoardShim.get_sampling_rate(board_id),BoardShim.get_eeg_names(board_id),5 )
+                args=(plot_queue, BoardShim.get_sampling_rate(board_id), BoardShim.get_eeg_names(board_id), 5),
+                daemon=True  #clean close
             )
             plot_process.start()
             st.session_state.plot_process = plot_process
             
-            time.sleep(1)
+            time.sleep(2)  
+            st.success("Plot window started!")
 
         if 'stream' not in st.session_state:
             try:

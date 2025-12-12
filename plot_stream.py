@@ -1,6 +1,4 @@
-import matplotlib
-matplotlib.use('TkAgg')
-
+import matplotlib    
 import time
 import numpy as np
 import matplotlib.pyplot as plt
@@ -8,6 +6,7 @@ from brainflow.data_filter import DataFilter, FilterTypes
 from queue import Empty
 
 def run_plot(data_queue, sampling_rate, channel_names, window_seconds):
+    matplotlib.use('TkAgg', force=True) # utilise multiprocessing + Agg si ca marche pas
     buffer_size = int(window_seconds * sampling_rate)
     data_buffers = np.zeros((len(channel_names), buffer_size))
  
