@@ -7,8 +7,6 @@ import numpy as np
 import altair as alt
 import pandas as pd
 
-
-
 def create_viability_plot(arousal_value, viability_band, noise_level):
     fig, ax = plt.subplots(figsize=(8, 2))
     bar_min, bar_max = 0.0, 1.0
@@ -24,8 +22,6 @@ def create_viability_plot(arousal_value, viability_band, noise_level):
     ax.axis('off')
     return fig
 
-
-#sidebar controls and butons for start/stop
 def render_sim(on_caffeine_click, on_drowsy_click, on_exam_click):
     st.sidebar.title("Simulation Controls")
 
@@ -38,7 +34,9 @@ def render_sim(on_caffeine_click, on_drowsy_click, on_exam_click):
     st.session_state.setdefault("feedback_on", False)
     st.session_state.setdefault("environmental_threat", 0.0)
     st.session_state.setdefault("effort_amplification", 4.0)
-    st.session_state.setdefault("kp", 0.10); st.session_state.setdefault("ki", 0.00); st.session_state.setdefault("kd", 0.00)
+    st.session_state.setdefault("kp", 0.30)  
+    st.session_state.setdefault("ki", 0.05)  
+    st.session_state.setdefault("kd", 0.15)  
     st.session_state.setdefault("controller_type", "P Controller")
 
     state_name = st.sidebar.selectbox("Base State", ('Calm', 'Focused', 'Stressed'), key="state_name")
@@ -55,11 +53,11 @@ def render_sim(on_caffeine_click, on_drowsy_click, on_exam_click):
 
     if controller_type == "P Controller":
         kp = st.sidebar.slider("Proportional Gain (Kp)", 0.0, 1.0, key="kp")
-        ki = 0.0
-        kd = 0.0
+        ki = st.session_state.get("ki", 0.0)
+        kd = st.session_state.get("kd", 0.0)
         st.sidebar.button("Auto-Tune PID Gains", use_container_width=True, disabled=True)
         auto_tune_button = False
-    else: # PID Controller
+    else: # PID controller
         kp = st.sidebar.slider("Proportional Gain (Kp)", 0.0, 1.0, key="kp")
         ki = st.sidebar.slider("Integral Gain (Ki)", 0.0, 0.1, format="%.4f", key="ki")
         kd = st.sidebar.slider("Derivative Gain (Kd)", 0.0, 1.0, key="kd")
@@ -102,8 +100,6 @@ def render_sim(on_caffeine_click, on_drowsy_click, on_exam_click):
         "controller_type": controller_type,
     }
 
-
-#graph + arousal + vb
 def render_sim_dashboard():
     live_area = st.container()
     with live_area:
@@ -142,8 +138,6 @@ def render_sim_dashboard():
         "kp_bar": kp_bar, "ki_bar": ki_bar, "kd_bar": kd_bar,
     }
 
-
-#plot + updater
 def update_dashboard(placeholders, arousal, viability_band, history, noise_level, fatigue, is_burnt_out, state_intervals, energy, pid_gains):
     placeholders["arousal_metric"].metric("Arousal Index", f"{arousal:.2f}")
     placeholders["viability_metric"].metric("Viability Band", f"[{viability_band[0]:.2f}, {viability_band[1]:.2f}]")
@@ -176,9 +170,6 @@ def update_dashboard(placeholders, arousal, viability_band, history, noise_level
     chart_data = history.rename(columns={"arousal": "Arousal", "lower_band": "Lower Band", "upper_band": "Upper Band"})
     placeholders["history_chart"].line_chart(chart_data[['Arousal', 'Lower Band', 'Upper Band']])
 
-
-
-#GRAPHS
 def render_sim_analysis(data, target_arousal):
     st.subheader("Post-Simulation Analysis")
     
@@ -189,13 +180,13 @@ def render_sim_analysis(data, target_arousal):
     cost = np.sum(data['Position_Error']**2)
     
     # dl CSV btn
-    csv_data = data.to_csv(index=True)
+    csv_data = data.to_csv(index=False)
     st.download_button(
-        label="Download CSV",
+        label="Download CSV :)",
         data=csv_data,
         file_name=f"simulation_data_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.csv",
         mime="text/csv",
-        use_container_width=True,
+        use_container_width=True
     )
     
     st.divider()
