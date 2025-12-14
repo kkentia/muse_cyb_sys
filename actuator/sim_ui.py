@@ -170,7 +170,7 @@ def update_dashboard(placeholders, arousal, viability_band, history, noise_level
     chart_data = history.rename(columns={"arousal": "Arousal", "lower_band": "Lower Band", "upper_band": "Upper Band"})
     placeholders["history_chart"].line_chart(chart_data[['Arousal', 'Lower Band', 'Upper Band']])
 
-def render_sim_analysis(data, target_arousal):
+def render_sim_analysis(data, target_arousal, sampling_rate=20):
     st.subheader("Post-Simulation Analysis")
     
     # calc errors
@@ -178,6 +178,34 @@ def render_sim_analysis(data, target_arousal):
     data['Velocity'] = data['arousal'].diff().fillna(0)
     data['Velocity_Error'] = data['Velocity']
     cost = np.sum(data['Position_Error']**2)
+    
+    # calc time to goal (3s in band)
+    samples_needed = int(3 * sampling_rate)  #3 seconds worth
+    time_to_goal = None
+    energy_at_goal = None
+    
+    if 'in_band' in data.columns:
+        in_band_series = data['in_band'].values
+        consecutive_count = 0
+        for i, in_band in enumerate(in_band_series):
+            if in_band:
+                consecutive_count += 1
+                if consecutive_count >= samples_needed:
+                    # time is total time from start to NOW (i)
+                    time_to_goal = (i + 1) / sampling_rate  
+                    if 'energy' in data.columns:
+                        energy_at_goal = data['energy'].iloc[i]
+                    break
+            else:
+                #if out_of_range, reset counter
+                consecutive_count = 0
+    
+    # calc tot energy spent (cumulative)
+    energy_spent_at_goal = None
+    if 'energy_spent' in data.columns:
+        if time_to_goal is not None:
+            goal_sample_index = int(time_to_goal * sampling_rate) - 1
+            energy_spent_at_goal = data['energy_spent'].iloc[:goal_sample_index + 1].sum()
     
     # dl CSV btn
     csv_data = data.to_csv(index=False)
@@ -191,7 +219,36 @@ def render_sim_analysis(data, target_arousal):
     
     st.divider()
     
-    st.metric("Total Cost (Sum of Squared Error)", f"{cost:.2f}")
+    # metrics
+    st.subheader("Performance Metrics")
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.metric("Total Cost (SSE)", f"{cost:.2f}")
+    
+    with col2:
+        if time_to_goal is not None:
+            st.metric("Time to Reach Goal", f"{time_to_goal:.2f} s")
+        else:
+            st.metric("Time to Reach Goal", "Not reached")
+
+    #2nd row 
+    col3, col4 = st.columns(2)
+    
+    with col3:
+        if energy_at_goal is not None:
+            st.metric("Energy Remaining at Goal", f"{energy_at_goal:.2%}")
+        else:
+            st.metric("Energy Remaining at Goal", "N/A")
+    
+    with col4:
+        if energy_spent_at_goal is not None:
+            st.metric("Energy Spent to Reach Goal", f"{energy_spent_at_goal:.2%}")
+        else:
+            st.metric("Energy Spent to Reach Goal", "N/A")
+    
+    st.divider()
+    
     st.write("**Position Error (Arousal - Target)**")
     st.line_chart(data['Position_Error'])
     st.write("**Velocity Error (Rate of Change of Arousal)**")

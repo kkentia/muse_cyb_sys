@@ -30,9 +30,13 @@ class SimulatedStream:
         self.tuning_peak_times = []
         self.tuning_peak_values = []
         
-        # Adaptive Supervisor Variables
+        # adaptive vars for PID
         self.out_of_band_counter = 0
         self.adaptive_multiplier = 1.0
+        
+        # energy tracking
+        self.total_energy_spent = 0.0
+        self.last_energy_cost = 0.0  # last energy cost
 
 
     def reset(self, state_name):
@@ -45,6 +49,8 @@ class SimulatedStream:
         self.is_tuning = False; self.tuning_kp = 0.0
         self.tuning_peak_times = []; self.tuning_peak_values = []
         self.out_of_band_counter = 0; self.adaptive_multiplier = 1.0
+        self.total_energy_spent = 0.0
+        self.last_energy_cost = 0.0
 
 
     #perturbation
@@ -62,6 +68,8 @@ class SimulatedStream:
 
     # MAIN METHOD------------------------
     def get_arousal_value(self, state_name, manual_target_arousal, natural_flux, noise_level, kp, ki, kd, control_delay, feedback_on, environmental_threat, effort_amplification, controller_type):
+        
+        self.last_energy_cost = 0.0 #reset
         
         # feedback off = no conscious control
         if not feedback_on:
@@ -108,7 +116,7 @@ class SimulatedStream:
             viability_band = [manual_target_arousal - natural_flux, manual_target_arousal + natural_flux]
             
             #display
-            return self.current_arousal, viability_band, self.fatigue, self.is_burnt_out, self.energy, (0.0, 0.0, 0.0)
+            return self.current_arousal, viability_band, self.fatigue, self.is_burnt_out, self.energy, (0.0, 0.0, 0.0), self.last_energy_cost
         
         
         #------------------------   feedback_on TRUE:
@@ -207,15 +215,13 @@ class SimulatedStream:
             base_kd = kd if kd > 0 else self.kd
 
             if controller_type == "P Controller":
-                # Pure P Controller logic
                 if len(self.arousal_history) > control_delay:
                     error = target - self.arousal_history[-(control_delay + 1)]
                 else:
                     error = target - self.current_arousal
                 
-                # No adaptive multiplier for Pure P
                 pid_force = kp * error
-                
+        
                 display_kp = kp
                 self.integral_error = 0.0
                 self.previous_error = error
@@ -249,6 +255,8 @@ class SimulatedStream:
         # 5) energy cost and external forces
         energy_cost_multiplier = 0.1
         energy_cost = abs(conscious_effort_force) * energy_cost_multiplier
+        self.last_energy_cost = energy_cost  # store for history tracking
+        self.total_energy_spent += energy_cost  #accumulate total spent
         self.energy -= energy_cost
         self.energy = max(0.0, self.energy)
 
@@ -262,4 +270,4 @@ class SimulatedStream:
 
         viability_band = [manual_target_arousal - natural_flux, manual_target_arousal + natural_flux]
 
-        return self.current_arousal, viability_band, self.fatigue, self.is_burnt_out, self.energy, (display_kp, display_ki, display_kd)
+        return self.current_arousal, viability_band, self.fatigue, self.is_burnt_out, self.energy, (display_kp, display_ki, display_kd), self.last_energy_cost

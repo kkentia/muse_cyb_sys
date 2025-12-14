@@ -242,7 +242,7 @@ def run_simulation_mode():
     
     def set_scenario(scenario_name):
         st.session_state.sim_is_running = True
-        st.session_state.sim_history = pd.DataFrame(columns=["arousal", "lower_band", "upper_band", "fatigue", "energy"])
+        st.session_state.sim_history = pd.DataFrame(columns=["arousal", "lower_band", "upper_band", "fatigue", "energy", "energy_spent", "in_band"])
         
         if scenario_name == "caffeine":
             st.session_state.gain = 0.5; st.session_state.latency = 2; st.session_state.noise_level = 0.02; st.session_state.environmental_threat = 0.0; st.session_state.effort_amplification = 5.0
@@ -269,7 +269,7 @@ def run_simulation_mode():
 
     if controls["start_button"]:
         st.session_state.sim_is_running = True
-        st.session_state.sim_history = pd.DataFrame(columns=["arousal", "lower_band", "upper_band", "fatigue", "energy"])
+        st.session_state.sim_history = pd.DataFrame(columns=["arousal", "lower_band", "upper_band", "fatigue", "energy", "energy_spent", "in_band"])
         sim_stream.reset(controls["state_name"])
         # clear
         if 'post_analysis_container' in st.session_state:
@@ -297,7 +297,7 @@ def run_simulation_mode():
             current_controls = {key: st.session_state.get(key) for key in control_keys}
         
             # pass new PID gains & controller type
-            arousal, viability_band, fatigue, is_burnt_out, energy, pid_gains = sim_stream.get_arousal_value(
+            arousal, viability_band, fatigue, is_burnt_out, energy, pid_gains, energy_spent = sim_stream.get_arousal_value(
                 current_controls["state_name"], current_controls["target_arousal"],
                 current_controls["natural_flux"], current_controls["noise_level"], 
                 current_controls["kp"], current_controls["ki"], current_controls["kd"],
@@ -307,7 +307,18 @@ def run_simulation_mode():
 
             )
 
-            new_entry = pd.DataFrame([{"arousal": arousal, "lower_band": viability_band[0], "upper_band": viability_band[1], "fatigue": fatigue, "energy": energy}])
+            # check if in viability band
+            in_band = viability_band[0] <= arousal <= viability_band[1]
+
+            new_entry = pd.DataFrame([{
+                "arousal": arousal, 
+                "lower_band": viability_band[0], 
+                "upper_band": viability_band[1], 
+                "fatigue": fatigue, 
+                "energy": energy,
+                "energy_spent": energy_spent,
+                "in_band": in_band
+            }])
             st.session_state.sim_history = pd.concat([st.session_state.sim_history, new_entry], ignore_index=True)
             if len(st.session_state.sim_history) > 200: st.session_state.sim_history = st.session_state.sim_history.iloc[-200:]
             
@@ -322,7 +333,8 @@ def run_simulation_mode():
         st.session_state.post_analysis_container = post_analysis_container
         with post_analysis_container:
             st.info("Simulation stopped. Showing analysis of the collected data.")
-            render_sim_analysis(st.session_state.sim_history, st.session_state.target_arousal)
+            sampling_rate = st.session_state.get("sensor_sampling_rate", 20)
+            render_sim_analysis(st.session_state.sim_history, st.session_state.target_arousal, sampling_rate)
 
 #----------------------------------------------------------------------------------------------------------------------------
 def main():
