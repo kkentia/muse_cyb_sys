@@ -18,21 +18,19 @@ class SimulatedStream:
         self.outer_loop_counter = 0
         self.target_override = 0.0
         self.is_burnt_out = False
-        self.burnout_recovery_target = 0  # go to 0 arousal
+        self.burnout_recovery_target = self.states['Calm']['initial_arousal']
         self.energy = 1.0
 
-        # PID state vars
         self.integral_error = 0.0
         self.previous_error = 0.0
         self.kp = 0.1; self.ki = 0.0; self.kd = 0.0
-
 
         self.is_tuning = False
         self.tuning_kp = 0.0
         self.tuning_peak_times = []
         self.tuning_peak_values = []
         
-        #adaptive vars for PID
+        # Adaptive Supervisor Variables
         self.out_of_band_counter = 0
         self.adaptive_multiplier = 1.0
 
@@ -47,7 +45,7 @@ class SimulatedStream:
         self.is_tuning = False; self.tuning_kp = 0.0
         self.tuning_peak_times = []; self.tuning_peak_values = []
         self.out_of_band_counter = 0; self.adaptive_multiplier = 1.0
-        self.burnout_recovery_target = 0.0
+
 
     #perturbation
     def apply_spike(self, spike_magnitude):
@@ -57,10 +55,9 @@ class SimulatedStream:
     def start_auto_tuning(self):
         print("--- STARTING AUTO-TUNER ---")
         self.is_tuning = True
-        self.tuning_kp = 0.1  # uultimate gain
+        self.tuning_kp = 0.1
         self.integral_error = 0.0; self.previous_error = 0.0
         self.tuning_peak_times = []; self.tuning_peak_values = []
-
 
 
     # MAIN METHOD------------------------
@@ -75,7 +72,6 @@ class SimulatedStream:
             self.energy = min(1.0, self.energy)
             
             # fatigue recover 
-
             self.outer_loop_counter += 1
             if self.outer_loop_counter >= 20:
                 self.outer_loop_counter = 0
@@ -88,13 +84,14 @@ class SimulatedStream:
             self.integral_error = 0.0
             self.previous_error = 0.0
             self.out_of_band_counter = 0
+            self.adaptive_multiplier = 1.0
             self.is_burnt_out = False
             
             if self.is_tuning:
                 print("Feedback turned OFF - stopping auto-tuner")
                 self.is_tuning = False
             
-            # natural drift to resting state (weak)
+            # natural drift
             resting_target = self.states[state_name]['initial_arousal']
             drift_error = resting_target - self.current_arousal
             conscious_effort_force = drift_error * 0.02
@@ -114,9 +111,7 @@ class SimulatedStream:
             return self.current_arousal, viability_band, self.fatigue, self.is_burnt_out, self.energy, (0.0, 0.0, 0.0)
         
         
-        
-        
-#------------------------   feedback_on TRUE:
+        #------------------------   feedback_on TRUE:
         
         # 1) energy regen
         energy_regeneration_rate = 0.001
@@ -148,8 +143,8 @@ class SimulatedStream:
         target = effective_target
         error = target - self.current_arousal
 
-        # adaptive control
-        if not self.is_tuning and not self.is_burnt_out:
+        # adaptive control (PID Only)
+        if not self.is_tuning and not self.is_burnt_out and controller_type == "PID Controller":
             viability_band = [manual_target_arousal - natural_flux, manual_target_arousal + natural_flux]
             if self.current_arousal < viability_band[0] or self.current_arousal > viability_band[1]:
                 self.out_of_band_counter += 1
@@ -157,12 +152,11 @@ class SimulatedStream:
                 self.out_of_band_counter = 0
                 if self.adaptive_multiplier > 1.0: self.adaptive_multiplier -= 0.005
 
-            if self.out_of_band_counter > 40: # >2 seconds out of target VB
+            if self.out_of_band_counter > 40: 
                 self.adaptive_multiplier += 0.02
             self.adaptive_multiplier = min(5.0, max(1.0, self.adaptive_multiplier))
-
-
-
+        else:
+            self.out_of_band_counter = 0
 
         # 3) main force ctrl
         conscious_effort_force = 0.0
@@ -171,47 +165,37 @@ class SimulatedStream:
         # burnout recovery
         if self.is_burnt_out:
             conscious_effort_force = (self.burnout_recovery_target - self.current_arousal) * 0.05
-            # Reset internal PID states during burnout
             self.integral_error = 0.0
             self.previous_error = 0.0
 
         # autotune
         elif self.is_tuning:
             tuning_error = manual_target_arousal - self.current_arousal
-            self.tuning_kp += 0.005 
+            self.tuning_kp += 0.002
             conscious_effort_force = tuning_error * self.tuning_kp
-        
             display_kp = self.tuning_kp
-
-            #detect peaks in arousal to determine ultimate gain and period
+            
             history = np.array(self.arousal_history)
-            if len(history) > 5:
-                smooth_curr = np.mean(history[-3:])
-                smooth_prev = np.mean(history[-4:-1])
-                smooth_prev2 = np.mean(history[-5:-2])
-
-                is_peak = (smooth_prev > smooth_prev2) and (smooth_prev > smooth_curr)
-                
-                if is_peak and smooth_prev > manual_target_arousal:
-                    self.tuning_peak_times.append(len(history))
-                    self.tuning_peak_values.append(smooth_prev)
-                    
-                    if len(self.tuning_peak_times) > 3:
-                        avg_amplitude = np.mean(self.tuning_peak_values[-3:])
-                        if abs(avg_amplitude - manual_target_arousal) > 0.02:
-                            dt = 0.05 
-                            tu_samples = np.mean(np.diff(self.tuning_peak_times[-3:]))
-                            tu_seconds = tu_samples * dt
-                            
-                        # Ziegler-Nichols PID equatioms
-                            ku = self.tuning_kp
-                            self.kp = 0.6 * ku
-                            self.ki = (2.0 * self.kp) / tu_seconds
-                            self.kd = (self.kp * tu_seconds) / 8.0
-                            
-                            print(f"--- TUNING COMPLETE --- Ku={ku:.3f}, Tu={tu_seconds:.2f}s")
-                            print(f"New Gains: Kp={self.kp:.3f}, Ki={self.ki:.3f}, Kd={self.kd:.3f}")
-                            self.is_tuning = False
+            if len(history) > 10:
+                smooth = np.convolve(history, np.ones(5)/5, mode='valid')
+                if len(smooth) > 3:
+                    curr = smooth[-1]; prev = smooth[-2]; prev2 = smooth[-3]
+                    is_peak = (prev > prev2) and (prev > curr)
+                    if is_peak and prev > manual_target_arousal:
+                        self.tuning_peak_times.append(len(history))
+                        self.tuning_peak_values.append(prev)
+                        if len(self.tuning_peak_times) > 3:
+                            peak_diffs = np.diff(self.tuning_peak_times[-3:])
+                            if np.mean(peak_diffs) > 10: 
+                                dt = 0.05 
+                                tu_seconds = np.mean(peak_diffs) * dt
+                                ku = self.tuning_kp
+                                self.kp = 0.45 * ku
+                                self.ki = self.kp / (2.2 * tu_seconds)
+                                self.kd = self.kp * tu_seconds / 6.3
+                                print(f"--- TUNING COMPLETE --- Ku={ku:.3f}, Tu={tu_seconds:.2f}s")
+                                print(f"New Gains: Kp={self.kp:.3f}, Ki={self.ki:.3f}, Kd={self.kd:.3f}")
+                                self.is_tuning = False
 
         # 4) choose controller
         else:
@@ -223,14 +207,21 @@ class SimulatedStream:
             base_kd = kd if kd > 0 else self.kd
 
             if controller_type == "P Controller":
-                active_kp = base_kp * self.adaptive_multiplier
-                pid_force = active_kp * error
+                # Pure P Controller logic
+                if len(self.arousal_history) > control_delay:
+                    error = target - self.arousal_history[-(control_delay + 1)]
+                else:
+                    error = target - self.current_arousal
                 
-                display_kp = active_kp
+                # No adaptive multiplier for Pure P
+                pid_force = kp * error
+                
+                display_kp = kp
                 self.integral_error = 0.0
                 self.previous_error = error
 
             elif controller_type == "PID Controller":
+                # PID Controller Logic
                 active_kp = base_kp * self.adaptive_multiplier
                 active_ki = base_ki * self.adaptive_multiplier
                 active_kd = base_kd * self.adaptive_multiplier
@@ -246,7 +237,7 @@ class SimulatedStream:
                 display_ki = active_ki
                 display_kd = active_kd
 
-            # apply amp, fatigue, and energy  --> limits
+            # apply amp, fatigue, and energy --> limits
             amplifier = 1.0 + (abs(error) * effort_amplification)
             amplified_force = pid_force * amplifier
             
