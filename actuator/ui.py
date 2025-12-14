@@ -110,7 +110,7 @@ def update_main_dashboard(placeholders, arousal, viability_band, in_range, artif
 
 
 # GRAPHS
-def render_post_session_analysis(history_df, viability_band):
+def render_post_session_analysis(history_df, viability_band, sampling_rate=10):
     if history_df.empty:
         st.info("no data :(")
         return
@@ -126,6 +126,22 @@ def render_post_session_analysis(history_df, viability_band):
     # energy cost
     cost = np.sum(history_df['Position_Error']**2)
     
+    # calc time to goal (3s in band)
+    samples_needed = int(3 * sampling_rate)
+    time_to_goal = None
+    
+    if 'in_range' in history_df.columns:
+        in_range_series = history_df['in_range'].values
+        consecutive_count = 0
+        for i, in_range in enumerate(in_range_series):
+            if in_range:
+                consecutive_count += 1
+                if consecutive_count >= samples_needed:
+                    time_to_goal = (i + 1) / sampling_rate
+                    break
+            else:
+                consecutive_count = 0
+    
     # dl CSV btn
     csv_data = history_df.to_csv(index=True)
     st.download_button(
@@ -138,13 +154,18 @@ def render_post_session_analysis(history_df, viability_band):
     
     st.divider()
     
-    col1, col2, col3 = st.columns(3)
+    col1, col2, col3, col4 = st.columns(4)
     with col1:
         st.metric("Total Cost", f"{cost:.2f}")
     with col2:
+        if time_to_goal is not None:
+            st.metric("Time to Reach Goal", f"{time_to_goal:.2f} s")
+        else:
+            st.metric("Time to Reach Goal", "Not reached")
+    with col3:
         in_range_pct = (history_df['in_range'].sum() / len(history_df) * 100) if 'in_range' in history_df else 0
         st.metric("Time In Range", f"{in_range_pct:.1f}%")
-    with col3:
+    with col4:
         artifact_pct = (history_df['artifact'].sum() / len(history_df) * 100) if 'artifact' in history_df else 0
         st.metric("Artifact Rate", f"{artifact_pct:.1f}%")
     
