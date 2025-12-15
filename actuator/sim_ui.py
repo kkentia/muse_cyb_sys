@@ -261,7 +261,7 @@ def render_sim_analysis(data, target_arousal, sampling_rate=20):
     st.pyplot(fig)
     st.divider()
     st.write("### Phase Portrait (System Stability)")
-    st.write("This plot shows the system's trajectory. A stable system will spiral into the center (0,0).")
+    st.write("This plot shows the system's trajectory.")
     phase_data = data[['Position_Error', 'Velocity_Error']].copy()
     phase_data['Index'] = range(len(phase_data))
     chart = alt.Chart(phase_data).mark_point(opacity=0.5, size=10).encode(
