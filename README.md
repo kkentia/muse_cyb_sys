@@ -1,6 +1,6 @@
 --> 📄 [View the full system implementation paper](Cybernetic_Muse_System.pdf) <--
-
-
+<br>
+--> 📄 [View the presentation slides](Muse%20arousal%20stability%20cybernetic%20system.pdf) <--
  <br> 
 
 
