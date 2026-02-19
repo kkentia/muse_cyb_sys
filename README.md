@@ -1,3 +1,9 @@
+--> 📄 [View the full system implementation paper](Cybernetic_Muse_System.pdf) <--
+
+
+ <br> 
+
+
 Create and activate a virtual environment:
 
 ```bash
